@@ -56,6 +56,10 @@ public class OrderHandler {
                 eventPublisher.publish(new OrderRejectedEvent(enterOrderRq.getRequestId(), enterOrderRq.getOrderId(), List.of(Message.SELLER_HAS_NOT_ENOUGH_POSITIONS)));
                 return;
             }
+            if (matchResult.outcome() == MatchingOutcome.NOT_ENOUGH_EXECUTED_QUANTITY) {
+                eventPublisher.publish(new OrderRejectedEvent(enterOrderRq.getRequestId(), enterOrderRq.getOrderId(), List.of(Message.THE_EXECUTED_QUANTITY_OF_REQUESTED_ORDER_IS_LESS_THAN_MINIMUM_EXECUTION_QUANTITY)));
+                return;
+            }
             if (enterOrderRq.getRequestType() == OrderEntryType.NEW_ORDER)
                 eventPublisher.publish(new OrderAcceptedEvent(enterOrderRq.getRequestId(), enterOrderRq.getOrderId()));
             else
@@ -87,6 +91,10 @@ public class OrderHandler {
             errors.add(Message.ORDER_QUANTITY_NOT_POSITIVE);
         if (enterOrderRq.getPrice() <= 0)
             errors.add(Message.ORDER_PRICE_NOT_POSITIVE);
+        if (enterOrderRq.getMinimumExecutionQuantity() < 0)
+            errors.add(Message.MINIMUM_EXECUTION_QUANTITY_IS_NEGATIVE);
+        if(enterOrderRq.getMinimumExecutionQuantity() > enterOrderRq.getQuantity())
+            errors.add(Message.MINIMUM_EXECUTION_QUANTITY_IS_GREATER_THAN_ORDER_QUANTITY);
         Security security = securityRepository.findSecurityByIsin(enterOrderRq.getSecurityIsin());
         if (security == null)
             errors.add(Message.UNKNOWN_SECURITY_ISIN);
@@ -102,6 +110,9 @@ public class OrderHandler {
             errors.add(Message.UNKNOWN_SHAREHOLDER_ID);
         if (enterOrderRq.getPeakSize() < 0 || enterOrderRq.getPeakSize() >= enterOrderRq.getQuantity())
             errors.add(Message.INVALID_PEAK_SIZE);
+        if(enterOrderRq.getRequestType().equals(OrderEntryType.UPDATE_ORDER))
+            if(enterOrderRq.getMinimumExecutionQuantity() != security.getOrderBook().findByOrderId(enterOrderRq.getSide(), enterOrderRq.getOrderId()).getMinimumExecutionQuantity())
+                errors.add(Message.CHANGING_THE_MINIMUM_EXECUTION_QUANTITY_DURING_UPDATING_AN_ORDER_IS_NOT_ALLOWED);
         if (!errors.isEmpty())
             throw new InvalidRequestException(errors);
     }

@@ -1,6 +1,7 @@
 package ir.ramtung.tinyme.domain.service;
 
 import ir.ramtung.tinyme.domain.entity.*;
+import ir.ramtung.tinyme.messaging.request.EnterOrderRq;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedList;
@@ -57,10 +58,17 @@ public class Matcher {
         }
     }
 
-    public MatchResult execute(Order order) {
+    public MatchResult execute(Order order, int minimumExecutionQuantity) {
+        int order_quantity = order.getQuantity();
         MatchResult result = match(order);
         if (result.outcome() == MatchingOutcome.NOT_ENOUGH_CREDIT)
             return result;
+
+        int executed_quantity = order_quantity - result.remainder().getQuantity();
+        if(executed_quantity < minimumExecutionQuantity){
+            rollbackTrades(order, result.trades());
+            return MatchResult.notEnoughExecutedQuantity();
+        }
 
         if (result.remainder().getQuantity() > 0) {
             if (order.getSide() == Side.BUY) {
