@@ -6,6 +6,7 @@ public class Message {
     public static final String ORDER_PRICE_NOT_POSITIVE = "Order price is not-positive";
     public static final String MINIMUM_EXECUTION_QUANTITY_IS_NEGATIVE = "Minimum execution quantity is negative";
     public static final String MINIMUM_EXECUTION_QUANTITY_IS_GREATER_THAN_ORDER_QUANTITY = "Minimum execution quantity is greater than order quantity";
+    public static final String STOP_LIMIT_ORDER_CANNOT_BE_ICEBERG_OR_HAVE_MINIMUM_EXECUTION_QUANTITY = "Stop limit order cannot be Iceberg or have minimum execution quantity";
     public static final String UNKNOWN_SECURITY_ISIN = "Unknown security ISIN";
     public static final String ORDER_ID_NOT_FOUND = "Order ID not found in the order book";
     public static final String INVALID_PEAK_SIZE = "Iceberg order peak size is out of range";

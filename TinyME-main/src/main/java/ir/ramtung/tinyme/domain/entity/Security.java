@@ -19,6 +19,8 @@ public class Security {
     @Builder.Default
     private int lotSize = 1;
     @Builder.Default
+    private int lastTradedPrice = 0;
+    @Builder.Default
     private OrderBook orderBook = new OrderBook();
 
     public MatchResult newOrder(EnterOrderRq enterOrderRq, Broker broker, Shareholder shareholder, Matcher matcher) {
@@ -28,9 +30,12 @@ public class Security {
             return MatchResult.notEnoughPositions();
         Order order;
         if (enterOrderRq.getPeakSize() == 0) {
-            if (enterOrderRq.getMinimumExecutionQuantity() == 0)
+            if (enterOrderRq.getMinimumExecutionQuantity() == 0) {
                 order = new Order(enterOrderRq.getOrderId(), this, enterOrderRq.getSide(),
                         enterOrderRq.getQuantity(), enterOrderRq.getPrice(), broker, shareholder, enterOrderRq.getEntryTime(), OrderStatus.NEW);
+                if(enterOrderRq.getStopPrice() > 0 && enterOrderRq.getSide() == Side.BUY)
+                    broker.increaseCreditBy(order.getValue());
+            }
             else
                 order = new Order(enterOrderRq.getOrderId(), this, enterOrderRq.getSide(),
                         enterOrderRq.getQuantity(), enterOrderRq.getPrice(), broker, shareholder, enterOrderRq.getEntryTime(), OrderStatus.NEW, enterOrderRq.getMinimumExecutionQuantity());
@@ -46,7 +51,10 @@ public class Security {
                         enterOrderRq.getEntryTime(), enterOrderRq.getPeakSize(), enterOrderRq.getMinimumExecutionQuantity());
         }
 
-        return matcher.execute(order, enterOrderRq.getMinimumExecutionQuantity());
+        MatchResult matchResult = matcher.execute(order, enterOrderRq.getMinimumExecutionQuantity());
+        if(!matchResult.trades().isEmpty())
+            lastTradedPrice = matchResult.trades().getLast().getPrice();
+        return matchResult;
     }
 
     public void deleteOrder(DeleteOrderRq deleteOrderRq) throws InvalidRequestException {
