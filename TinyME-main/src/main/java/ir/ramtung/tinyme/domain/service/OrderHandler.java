@@ -47,10 +47,8 @@ public class OrderHandler {
 
             MatchResult matchResult;
             if (enterOrderRq.getRequestType() == OrderEntryType.NEW_ORDER) {
-                if (OrderCanBeActivated(enterOrderRq, security.getLastTradedPrice())) {
-                    matchResult = security.newOrder(enterOrderRq, broker, shareholder, matcher);
-                    publishEnteredOrderResult(enterOrderRq, matchResult);
-                }
+                if (OrderCanBeActivated(enterOrderRq, security.getLastTradedPrice()))
+                    executeOrder(enterOrderRq);
                 else {
                     InActiveOrders.add(enterOrderRq);
                     return;
@@ -113,24 +111,24 @@ public class OrderHandler {
             Collections.sort(ActivatedSellOrders, Comparator.comparing(EnterOrderRq::getStopPrice));
             Collections.reverse(ActivatedSellOrders);
             for(EnterOrderRq ActiveBuyOrder : ActivatedBuyOrders) {
-                Security security = securityRepository.findSecurityByIsin(ActiveBuyOrder.getSecurityIsin());
-                Broker broker = brokerRepository.findBrokerById(ActiveBuyOrder.getBrokerId());
-                Shareholder shareholder = shareholderRepository.findShareholderById(ActiveBuyOrder.getShareholderId());
-                MatchResult matchResult = security.newOrder(ActiveBuyOrder, broker, shareholder, matcher);
-                publishEnteredOrderResult(ActiveBuyOrder, matchResult);
+                executeOrder(ActiveBuyOrder);
                 InActiveOrders.remove(ActiveBuyOrder);
             }
             for(EnterOrderRq ActiveSellOrder : ActivatedSellOrders) {
-                Security security = securityRepository.findSecurityByIsin(ActiveSellOrder.getSecurityIsin());
-                Broker broker = brokerRepository.findBrokerById(ActiveSellOrder.getBrokerId());
-                Shareholder shareholder = shareholderRepository.findShareholderById(ActiveSellOrder.getShareholderId());
-                MatchResult matchResult = security.newOrder(ActiveSellOrder, broker, shareholder, matcher);
-                publishEnteredOrderResult(ActiveSellOrder, matchResult);
+                executeOrder(ActiveSellOrder);
                 InActiveOrders.remove(ActiveSellOrder);
             }
 
             ExtractActiveOrders(ActivatedBuyOrders, ActivatedSellOrders);
         }
+    }
+
+    private void executeOrder(EnterOrderRq enterOrderRq) {
+        Security security = securityRepository.findSecurityByIsin(enterOrderRq.getSecurityIsin());
+        Broker broker = brokerRepository.findBrokerById(enterOrderRq.getBrokerId());
+        Shareholder shareholder = shareholderRepository.findShareholderById(enterOrderRq.getShareholderId());
+        MatchResult matchResult = security.newOrder(enterOrderRq, broker, shareholder, matcher);
+        publishEnteredOrderResult(enterOrderRq, matchResult);
     }
 
     private void validateEnterOrderRq(EnterOrderRq enterOrderRq) throws InvalidRequestException {
