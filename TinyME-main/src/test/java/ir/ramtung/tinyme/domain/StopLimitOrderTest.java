@@ -64,10 +64,10 @@ public class StopLimitOrderTest {
 
         orderBook = security.getOrderBook();
         orders = Arrays.asList(
-                new Order(1, security, Side.BUY, 100, 15700, buyer_broker, shareholder),
-                new Order(2, security, Side.BUY, 43, 15500, buyer_broker, shareholder),
-                new Order(3, security, Side.BUY, 445, 15450, buyer_broker, shareholder),
-                new Order(4, security, Side.BUY, 526, 15450, buyer_broker, shareholder),
+                new Order(1, security, Side.BUY, 100, 15200, buyer_broker, shareholder),
+                new Order(2, security, Side.BUY, 43, 15000, buyer_broker, shareholder),
+                new Order(3, security, Side.BUY, 445, 14950, buyer_broker, shareholder),
+                new Order(4, security, Side.BUY, 526, 14900, buyer_broker, shareholder),
                 new Order(5, security, Side.SELL, 300, 15400, seller_broker, shareholder),
                 new Order(6, security, Side.SELL, 300, 15800, seller_broker, shareholder),
                 new Order(11, security, Side.SELL, 300, 15900, seller_broker, shareholder),
