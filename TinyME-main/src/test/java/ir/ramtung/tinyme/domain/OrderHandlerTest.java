@@ -8,6 +8,7 @@ import ir.ramtung.tinyme.messaging.EventPublisher;
 import ir.ramtung.tinyme.messaging.Message;
 import ir.ramtung.tinyme.messaging.TradeDTO;
 import ir.ramtung.tinyme.messaging.event.*;
+import ir.ramtung.tinyme.messaging.exception.InvalidRequestException;
 import ir.ramtung.tinyme.messaging.request.DeleteOrderRq;
 import ir.ramtung.tinyme.messaging.request.EnterOrderRq;
 import ir.ramtung.tinyme.repository.BrokerRepository;
@@ -25,7 +26,9 @@ import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 
+import static ir.ramtung.tinyme.domain.entity.Side.BUY;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.mockito.Mockito.*;
 
 @SpringBootTest
@@ -558,6 +561,20 @@ public class OrderHandlerTest {
         verify(eventPublisher).publish(any(OrderAcceptedEvent.class));
         assertThat(shareholder1.hasEnoughPositionsOn(security, 100_000)).isTrue();
         assertThat(shareholder.hasEnoughPositionsOn(security, 500)).isTrue();
+    }
+
+    @Test
+    void updating_non_existing_order_fails() {
+        EnterOrderRq updateOrderRq = EnterOrderRq.createUpdateOrderRq(1, security.getIsin(), 6, LocalDateTime.now(), BUY, 350, 15700, 1, 0, 0);
+        orderHandler.handleEnterOrder(updateOrderRq);
+        verify(eventPublisher).publish(new OrderRejectedEvent(1, 6, List.of(Message.ORDER_ID_NOT_FOUND)));
+    }
+
+    @Test
+    void deleting_non_existing_order_fails() {
+        DeleteOrderRq deleteOrderRq = new DeleteOrderRq(1, security.getIsin(), Side.SELL, 1);
+        orderHandler.handleDeleteOrder(deleteOrderRq);
+        verify(eventPublisher).publish(new OrderRejectedEvent(1, 1, List.of(Message.ORDER_ID_NOT_FOUND)));
     }
 
 }

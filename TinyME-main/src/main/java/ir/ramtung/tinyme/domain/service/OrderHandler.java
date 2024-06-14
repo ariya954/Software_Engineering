@@ -164,28 +164,42 @@ public class OrderHandler {
         if(enterOrderRq.getStopPrice() > 0)
             if(enterOrderRq.getPeakSize() > 0 || enterOrderRq.getMinimumExecutionQuantity() > 0)
                 errors.add(Message.STOP_LIMIT_ORDER_CANNOT_BE_ICEBERG_OR_HAVE_MINIMUM_EXECUTION_QUANTITY);
-        Security security = securityRepository.findSecurityByIsin(enterOrderRq.getSecurityIsin());
-        if (security == null)
-            errors.add(Message.UNKNOWN_SECURITY_ISIN);
-        else {
-            if(security.getMatchingState() == MatchingState.AUCTION)
-                if(enterOrderRq.getMinimumExecutionQuantity() > 0 || enterOrderRq.getStopPrice() > 0)
-                    errors.add(Message.ORDER_CANNOT_HAVE_MINIMUM_EXECUTION_QUANTITY_OR_STOP_PRICE_IN_AUCTION_MODE);
-            if (enterOrderRq.getQuantity() % security.getLotSize() != 0)
-                errors.add(Message.QUANTITY_NOT_MULTIPLE_OF_LOT_SIZE);
-            if (enterOrderRq.getPrice() % security.getTickSize() != 0)
-                errors.add(Message.PRICE_NOT_MULTIPLE_OF_TICK_SIZE);
-        }
+        if (enterOrderRq.getPeakSize() < 0 || enterOrderRq.getPeakSize() >= enterOrderRq.getQuantity())
+            errors.add(Message.INVALID_PEAK_SIZE);
         if (brokerRepository.findBrokerById(enterOrderRq.getBrokerId()) == null)
             errors.add(Message.UNKNOWN_BROKER_ID);
         if (shareholderRepository.findShareholderById(enterOrderRq.getShareholderId()) == null)
             errors.add(Message.UNKNOWN_SHAREHOLDER_ID);
-        if (enterOrderRq.getPeakSize() < 0 || enterOrderRq.getPeakSize() >= enterOrderRq.getQuantity())
-            errors.add(Message.INVALID_PEAK_SIZE);
-        if(enterOrderRq.getRequestType().equals(OrderEntryType.UPDATE_ORDER))
-            if(enterOrderRq.getStopPrice() == 0)
-                if(enterOrderRq.getMinimumExecutionQuantity() != security.getOrderBook().findByOrderId(enterOrderRq.getSide(), enterOrderRq.getOrderId()).getMinimumExecutionQuantity())
-                    errors.add(Message.CHANGING_THE_MINIMUM_EXECUTION_QUANTITY_DURING_UPDATING_AN_ORDER_IS_NOT_ALLOWED);
+        Security security = securityRepository.findSecurityByIsin(enterOrderRq.getSecurityIsin());
+        if (security == null)
+            errors.add(Message.UNKNOWN_SECURITY_ISIN);
+        else {
+            if (enterOrderRq.getPrice() % security.getTickSize() != 0)
+                errors.add(Message.PRICE_NOT_MULTIPLE_OF_TICK_SIZE);
+            if (enterOrderRq.getQuantity() % security.getLotSize() != 0)
+                errors.add(Message.QUANTITY_NOT_MULTIPLE_OF_LOT_SIZE);
+            if(security.getMatchingState() == MatchingState.AUCTION)
+                if(enterOrderRq.getMinimumExecutionQuantity() > 0 || enterOrderRq.getStopPrice() > 0)
+                    errors.add(Message.ORDER_CANNOT_HAVE_MINIMUM_EXECUTION_QUANTITY_OR_STOP_PRICE_IN_AUCTION_MODE);
+            if(enterOrderRq.getRequestType().equals(OrderEntryType.UPDATE_ORDER)) {
+                if (enterOrderRq.getStopPrice() == 0) {
+                    Order originalOrder = security.getOrderBook().findByOrderId(enterOrderRq.getSide(), enterOrderRq.getOrderId());
+                    if (originalOrder == null)
+                        errors.add(Message.ORDER_ID_NOT_FOUND);
+                    else {
+                        if ((originalOrder instanceof IcebergOrder) && enterOrderRq.getPeakSize() == 0)
+                            errors.add(Message.INVALID_PEAK_SIZE);
+                        if (!(originalOrder instanceof IcebergOrder) && enterOrderRq.getPeakSize() != 0)
+                            errors.add(Message.CANNOT_SPECIFY_PEAK_SIZE_FOR_A_NON_ICEBERG_ORDER);
+                        if (enterOrderRq.getMinimumExecutionQuantity() != originalOrder.getMinimumExecutionQuantity())
+                            errors.add(Message.CHANGING_THE_MINIMUM_EXECUTION_QUANTITY_DURING_UPDATING_AN_ORDER_IS_NOT_ALLOWED);
+                    }
+                }
+                else
+                    if (InActiveOrders.stream().filter(inActiveOrder -> inActiveOrder.getOrderId() == enterOrderRq.getOrderId()).findFirst().get() == null)
+                        errors.add(Message.ORDER_ID_NOT_FOUND);
+            }
+        }
         if (!errors.isEmpty())
             throw new InvalidRequestException(errors);
     }
@@ -194,8 +208,14 @@ public class OrderHandler {
         List<String> errors = new LinkedList<>();
         if (deleteOrderRq.getOrderId() <= 0)
             errors.add(Message.INVALID_ORDER_ID);
-        if (securityRepository.findSecurityByIsin(deleteOrderRq.getSecurityIsin()) == null)
+        Security security = securityRepository.findSecurityByIsin(deleteOrderRq.getSecurityIsin());
+        if (security == null)
             errors.add(Message.UNKNOWN_SECURITY_ISIN);
+        else{
+            Order order = security.getOrderBook().findByOrderId(deleteOrderRq.getSide(), deleteOrderRq.getOrderId());
+            if (order == null && (InActiveOrders.size() == 0 || InActiveOrders.stream().filter(inActiveOrder -> inActiveOrder.getOrderId() == deleteOrderRq.getOrderId()).findFirst().get() == null))
+                errors.add(Message.ORDER_ID_NOT_FOUND);
+        }
         if (!errors.isEmpty())
             throw new InvalidRequestException(errors);
     }
@@ -209,6 +229,11 @@ public class OrderHandler {
     }
 
     private boolean acceptEnteredOrder(EnterOrderRq enterOrderRq, Security security, Broker broker, Shareholder shareholder) {
+        if (enterOrderRq.getSide() == Side.SELL &&
+                !shareholder.hasEnoughPositionsOn(security, security.getOrderBook().totalSellQuantityByShareholder(shareholder) + enterOrderRq.getQuantity())) {
+            eventPublisher.publish(new OrderRejectedEvent(enterOrderRq.getRequestId(), enterOrderRq.getOrderId(), List.of(Message.SELLER_HAS_NOT_ENOUGH_POSITIONS)));
+            return false;
+        }
         if (enterOrderRq.getRequestType() == OrderEntryType.NEW_ORDER) {
             if (enterOrderRq.getStopPrice() > 0 || security.getMatchingState() == MatchingState.AUCTION) {
                 if (enterOrderRq.getSide() == Side.BUY) {
@@ -217,24 +242,12 @@ public class OrderHandler {
                         return false;
                     }
                     broker.decreaseCreditBy(enterOrderRq.getPrice() * enterOrderRq.getQuantity());
-                } else {
-                    if (!shareholder.hasEnoughPositionsOn(security, security.getOrderBook().totalSellQuantityByShareholder(shareholder) + enterOrderRq.getQuantity())) {
-                        eventPublisher.publish(new OrderRejectedEvent(enterOrderRq.getRequestId(), enterOrderRq.getOrderId(), List.of(Message.SELLER_HAS_NOT_ENOUGH_POSITIONS)));
-                        return false;
-                    }
                 }
             }
             eventPublisher.publish(new OrderAcceptedEvent(enterOrderRq.getRequestId(), enterOrderRq.getOrderId()));
         }
-        if(enterOrderRq.getRequestType() == OrderEntryType.UPDATE_ORDER) {
-            if (enterOrderRq.getStopPrice() > 0) {
-                if (InActiveOrders.stream().filter(inActiveOrder -> inActiveOrder.getOrderId() == enterOrderRq.getOrderId()).findFirst().get() == null) {
-                    eventPublisher.publish(new OrderRejectedEvent(enterOrderRq.getRequestId(), enterOrderRq.getOrderId(), List.of(Message.ORDER_ID_NOT_FOUND)));
-                    return false;
-                }
-            }
+        if(enterOrderRq.getRequestType() == OrderEntryType.UPDATE_ORDER)
             eventPublisher.publish(new OrderUpdatedEvent(enterOrderRq.getRequestId(), enterOrderRq.getOrderId()));
-        }
         return true;
     }
 

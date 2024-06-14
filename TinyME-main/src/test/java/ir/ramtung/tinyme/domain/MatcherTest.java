@@ -142,7 +142,7 @@ public class MatcherTest {
         );
 
         Order order = new IcebergOrder(1, security, BUY, 120 , 10, broker, shareholder, 40 );
-        MatchResult result = matcher.execute(order, 0, MatchingState.CONTINUOUS, 0);
+        MatchResult result = matcher.execute(order, MatchingState.CONTINUOUS, 0);
 
         assertThat(result.outcome()).isEqualTo(MatchingOutcome.EXECUTED);
         assertThat(result.trades()).hasSize(1);

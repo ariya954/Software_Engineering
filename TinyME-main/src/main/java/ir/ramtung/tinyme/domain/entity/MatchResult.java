@@ -13,16 +13,7 @@ public final class MatchResult {
         return new MatchResult(MatchingOutcome.EXECUTED, remainder, new LinkedList<>(trades));
     }
 
-    public static MatchResult notEnoughCredit() {
-        return new MatchResult(MatchingOutcome.NOT_ENOUGH_CREDIT, null, new LinkedList<>());
-    }
-    public static MatchResult notEnoughPositions() {
-        return new MatchResult(MatchingOutcome.NOT_ENOUGH_POSITIONS, null, new LinkedList<>());
-    }
-    public static MatchResult notEnoughExecutedQuantity() {
-        return new MatchResult(MatchingOutcome.NOT_ENOUGH_EXECUTED_QUANTITY, null, new LinkedList<>());
-    }
-    private MatchResult(MatchingOutcome outcome, Order remainder, LinkedList<Trade> trades) {
+    public MatchResult(MatchingOutcome outcome, Order remainder, LinkedList<Trade> trades) {
         this.outcome = outcome;
         this.remainder = remainder;
         this.trades = trades;
@@ -59,6 +50,4 @@ public final class MatchResult {
                 "remainder=" + remainder + ", " +
                 "trades=" + trades + ']';
     }
-
-
 }
