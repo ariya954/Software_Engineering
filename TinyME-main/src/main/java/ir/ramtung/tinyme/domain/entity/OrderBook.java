@@ -2,9 +2,12 @@ package ir.ramtung.tinyme.domain.entity;
 
 import lombok.Getter;
 
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.ListIterator;
+
+import static java.lang.Math.*;
 
 @Getter
 public class OrderBook {
@@ -86,5 +89,51 @@ public class OrderBook {
                 .filter(order -> order.getShareholder().equals(shareholder))
                 .mapToInt(Order::getTotalQuantity)
                 .sum();
+    }
+
+    public int calculateOpeningPriceAccordingTo(int lastTradedPrice) {
+        if (buyQueue.size() == 0 || sellQueue.size() == 0)
+            return 0;
+
+        int openingPrice = 0;
+        int maximumTradableQuantity = 0;
+
+        for (int currentOpeningPrice = min(buyQueue.getLast().getPrice(), sellQueue.getFirst().getPrice());
+                currentOpeningPrice <= max(buyQueue.getFirst().getPrice(), sellQueue.getLast().getPrice()); currentOpeningPrice++) {
+            int currentTradableQuantity = calculateTradableQuantityAccordingTo(currentOpeningPrice);
+            if (currentTradableQuantity == maximumTradableQuantity)
+                if (abs(currentOpeningPrice - lastTradedPrice) < abs(openingPrice - lastTradedPrice))
+                    openingPrice = currentOpeningPrice;
+            if (currentTradableQuantity > maximumTradableQuantity) {
+                maximumTradableQuantity = currentTradableQuantity;
+                openingPrice = currentOpeningPrice;
+            }
+        }
+        return openingPrice;
+    }
+
+    public int calculateTradableQuantityAccordingTo(int openingPrice) {
+        int tradableQuantity = 0;
+        for (Order buyOrder : findTradableBuyOrdersAccordingTo(openingPrice))
+            tradableQuantity += buyOrder.getQuantity();
+        for (Order sellOrder : findTradableSellOrdersAccordingTo(openingPrice))
+            tradableQuantity += sellOrder.getQuantity();
+        return tradableQuantity;
+    }
+
+    public List<Order> findTradableBuyOrdersAccordingTo(int openingPrice) {
+        List<Order> tradableBuyOrders = new ArrayList<>();
+        for (Order buyOrder : buyQueue)
+            if (buyOrder.getPrice() >= openingPrice)
+                tradableBuyOrders.add(buyOrder);
+        return tradableBuyOrders;
+    }
+
+    public List<Order> findTradableSellOrdersAccordingTo(int openingPrice) {
+        List<Order> tradableSellOrders = new ArrayList<>();
+        for (Order sellOrder : sellQueue)
+            if (sellOrder.getPrice() <= openingPrice)
+                tradableSellOrders.add(sellOrder);
+        return tradableSellOrders;
     }
 }

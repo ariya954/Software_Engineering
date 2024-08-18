@@ -1,7 +1,8 @@
 package ir.ramtung.tinyme.domain.service;
 
 import ir.ramtung.tinyme.domain.entity.*;
-import ir.ramtung.tinyme.messaging.request.EnterOrderRq;
+import ir.ramtung.tinyme.domain.service.MatchingControls.MatchingControlsList;
+import ir.ramtung.tinyme.messaging.request.MatchingState;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedList;
@@ -9,42 +10,33 @@ import java.util.ListIterator;
 
 @Service
 public class Matcher {
-    public MatchResult match(Order newOrder) {
-        OrderBook orderBook = newOrder.getSecurity().getOrderBook();
+    private MatchingControlsList matchingControls = new MatchingControlsList();
+
+    public MatchResult match(Order order, MatchingState matchingState, int openingPrice) {
+        OrderBook orderBook = order.getSecurity().getOrderBook();
         LinkedList<Trade> trades = new LinkedList<>();
 
-        while (orderBook.hasOrderOfType(newOrder.getSide().opposite()) && newOrder.getQuantity() > 0) {
-            Order matchingOrder = orderBook.matchWithFirst(newOrder);
-            if (matchingOrder == null)
+        while (orderBook.hasOrderOfType(order.getSide().opposite()) && order.getQuantity() > 0) {
+            Order matchingOrder = orderBook.matchWithFirst(order);
+            if (matchingOrder == null || (matchingState == MatchingState.AUCTION && matchingOrder.getPrice() > openingPrice))
                 break;
 
-            Trade trade = new Trade(newOrder.getSecurity(), matchingOrder.getPrice(), Math.min(newOrder.getQuantity(), matchingOrder.getQuantity()), newOrder, matchingOrder);
-            if (newOrder.getSide() == Side.BUY) {
-                if (trade.buyerHasEnoughCredit())
-                    trade.decreaseBuyersCredit();
-                else {
-                    rollbackTrades(newOrder, trades);
-                    return MatchResult.notEnoughCredit();
-                }
-            }
-            trade.increaseSellersCredit();
-            trades.add(trade);
+            Trade trade;
+            if(matchingState == MatchingState.AUCTION)
+                trade = new Trade(order.getSecurity(), openingPrice, Math.min(order.getQuantity(), matchingOrder.getQuantity()), order, matchingOrder);
+            else
+                trade = new Trade(order.getSecurity(), matchingOrder.getPrice(), Math.min(order.getQuantity(), matchingOrder.getQuantity()), order, matchingOrder);
 
-            if (newOrder.getQuantity() >= matchingOrder.getQuantity()) {
-                newOrder.decreaseQuantity(matchingOrder.getQuantity());
-                orderBook.removeFirst(matchingOrder.getSide());
-                if (matchingOrder instanceof IcebergOrder icebergOrder) {
-                    icebergOrder.decreaseQuantity(matchingOrder.getQuantity());
-                    icebergOrder.replenish();
-                    if (icebergOrder.getQuantity() > 0)
-                        orderBook.enqueue(icebergOrder);
-                }
-            } else {
-                matchingOrder.decreaseQuantity(newOrder.getQuantity());
-                newOrder.makeQuantityZero();
+            MatchingOutcome outcome = matchingControls.canAcceptTrade(order, trade);
+            if(outcome != MatchingOutcome.EXECUTED) {
+                rollbackTrades(order, trades);
+                return new MatchResult(outcome, null, new LinkedList<>());
             }
+
+            matchingControls.tradeAccepted(order, trade);
+            trades.add(trade);
         }
-        return MatchResult.executed(newOrder, trades);
+        return MatchResult.executed(order, trades);
     }
 
     private void rollbackTrades(Order newOrder, LinkedList<Trade> trades) {
@@ -58,35 +50,19 @@ public class Matcher {
         }
     }
 
-    public MatchResult execute(Order order, int minimumExecutionQuantity) {
-        int order_quantity = order.getQuantity();
-        MatchResult result = match(order);
-        if (result.outcome() == MatchingOutcome.NOT_ENOUGH_CREDIT)
-            return result;
+    public MatchResult execute(Order order, MatchingState matchingState, int openingPrice) {
+        MatchResult matchResult = match(order, matchingState, openingPrice);
+        if (matchResult.outcome() == MatchingOutcome.NOT_ENOUGH_CREDIT)
+            return matchResult;
 
-        int executed_quantity = order_quantity - result.remainder().getQuantity();
-        if(executed_quantity < minimumExecutionQuantity){
-            rollbackTrades(order, result.trades());
-            return MatchResult.notEnoughExecutedQuantity();
+        MatchingOutcome outcome = matchingControls.canAcceptMatching(order, matchResult);
+        if(outcome != MatchingOutcome.EXECUTED) {
+            rollbackTrades(order, matchResult.trades());
+            return new MatchResult(outcome, null, new LinkedList<>());
         }
 
-        if (result.remainder().getQuantity() > 0) {
-            if (order.getSide() == Side.BUY) {
-                if (!order.getBroker().hasEnoughCredit(order.getValue())) {
-                    rollbackTrades(order, result.trades());
-                    return MatchResult.notEnoughCredit();
-                }
-                order.getBroker().decreaseCreditBy(order.getValue());
-            }
-            order.getSecurity().getOrderBook().enqueue(result.remainder());
-        }
-        if (!result.trades().isEmpty()) {
-            for (Trade trade : result.trades()) {
-                trade.getBuy().getShareholder().incPosition(trade.getSecurity(), trade.getQuantity());
-                trade.getSell().getShareholder().decPosition(trade.getSecurity(), trade.getQuantity());
-            }
-        }
-        return result;
+        matchingControls.matchingAccepted(order, matchResult);
+
+        return matchResult;
     }
-
 }

@@ -3,6 +3,7 @@ package ir.ramtung.tinyme.domain;
 import ir.ramtung.tinyme.config.MockedJMSTestConfig;
 import ir.ramtung.tinyme.domain.entity.*;
 import ir.ramtung.tinyme.domain.service.Matcher;
+import ir.ramtung.tinyme.messaging.request.MatchingState;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,7 +56,7 @@ public class MatcherTest {
     void new_sell_order_matches_completely_with_part_of_the_first_buy() {
         Order order = new Order(11, security, Side.SELL, 100, 15600, broker, shareholder);
         Trade trade = new Trade(security, 15700, 100, orders.get(0), order);
-        MatchResult result = matcher.match(order);
+        MatchResult result = matcher.match(order, MatchingState.CONTINUOUS, 0);
         assertThat(result.remainder().getQuantity()).isEqualTo(0);
         assertThat(result.trades()).containsExactly(trade);
         assertThat(security.getOrderBook().getBuyQueue().getFirst().getQuantity()).isEqualTo(204);
@@ -65,7 +66,7 @@ public class MatcherTest {
     void new_sell_order_matches_partially_with_the_first_buy() {
         Order order = new Order(11, security, Side.SELL, 500, 15600, broker, shareholder);
         Trade trade = new Trade(security, 15700, 304, orders.get(0), order);
-        MatchResult result = matcher.match(order);
+        MatchResult result = matcher.match(order, MatchingState.CONTINUOUS, 0);
         assertThat(result.remainder().getQuantity()).isEqualTo(196);
         assertThat(result.trades()).containsExactly(trade);
         assertThat(security.getOrderBook().getBuyQueue().getFirst().getOrderId()).isEqualTo(2);
@@ -76,7 +77,7 @@ public class MatcherTest {
         Order order = new Order(11, security, Side.SELL, 500, 15500, broker, shareholder);
         Trade trade1 = new Trade(security, 15700, 304, orders.get(0), order);
         Trade trade2 = new Trade(security, 15500, 43, orders.get(1), order.snapshotWithQuantity(196));
-        MatchResult result = matcher.match(order);
+        MatchResult result = matcher.match(order, MatchingState.CONTINUOUS, 0);
         assertThat(result.remainder().getQuantity()).isEqualTo(153);
         assertThat(result.trades()).containsExactly(trade1, trade2);
         assertThat(security.getOrderBook().getBuyQueue().getFirst().getOrderId()).isEqualTo(3);
@@ -93,7 +94,7 @@ public class MatcherTest {
             totalTraded += o.getQuantity();
         }
 
-        MatchResult result = matcher.match(order);
+        MatchResult result = matcher.match(order, MatchingState.CONTINUOUS, 0);
         assertThat(result.remainder().getQuantity()).isEqualTo(160);
         assertThat(result.trades()).isEqualTo(trades);
         assertThat(security.getOrderBook().getSellQueue()).isEmpty();
@@ -102,7 +103,7 @@ public class MatcherTest {
     @Test
     void new_buy_order_does_not_match() {
         Order order = new Order(11, security, BUY, 2000, 15500, broker, shareholder);
-        MatchResult result = matcher.match(order);
+        MatchResult result = matcher.match(order, MatchingState.CONTINUOUS, 0);
         assertThat(result.remainder()).isEqualTo(order);
         assertThat(result.trades()).isEmpty();
     }
@@ -126,7 +127,7 @@ public class MatcherTest {
                 new Trade(security, 15450, 50, orders.get(0).snapshotWithQuantity(50), order.snapshotWithQuantity(130))
         );
 
-        MatchResult result = matcher.match(order);
+        MatchResult result = matcher.match(order, MatchingState.CONTINUOUS, 0);
 
         assertThat(result.remainder().getQuantity()).isEqualTo(80);
         assertThat(result.trades()).isEqualTo(trades);
@@ -141,7 +142,7 @@ public class MatcherTest {
         );
 
         Order order = new IcebergOrder(1, security, BUY, 120 , 10, broker, shareholder, 40 );
-        MatchResult result = matcher.execute(order, 0);
+        MatchResult result = matcher.execute(order, MatchingState.CONTINUOUS, 0);
 
         assertThat(result.outcome()).isEqualTo(MatchingOutcome.EXECUTED);
         assertThat(result.trades()).hasSize(1);

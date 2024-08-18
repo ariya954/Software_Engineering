@@ -18,12 +18,10 @@ public class Broker {
     private long credit;
 
     public void increaseCreditBy(long amount) {
-        assert amount >= 0;
         credit += amount;
     }
 
     public void decreaseCreditBy(long amount) {
-        assert amount >= 0;
         credit -= amount;
     }
 
